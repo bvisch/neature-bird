@@ -26,6 +26,9 @@ class FlappyBird:
         self.sprite = 0
         self.counter = 0
         self.offset = random.randint(-110, 110)
+        
+#         OUR VARIABLES
+        self.collisionOn = False;
 
     def updateWalls(self):
         self.wallx -= 2
@@ -51,9 +54,9 @@ class FlappyBird:
                                0 - self.gap - self.offset - 10,
                                self.wallDown.get_width() - 10,
                                self.wallDown.get_height())
-        if upRect.colliderect(self.bird):
+        if upRect.colliderect(self.bird) & self.collisionOn:
             self.dead = True
-        if downRect.colliderect(self.bird):
+        if downRect.colliderect(self.bird) & self.collisionOn:
             self.dead = True
         if not 0 < self.bird[1] < 720:
             self.bird[1] = 50
