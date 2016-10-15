@@ -11,6 +11,7 @@ class FlappyBird:
         # OUR VARIABLES
         self.collisionOn = True;
         self.offSetDistance = 150;
+        self.dist = 0;
         
         # EXISTING VARIABLES
         self.screen = pygame.display.set_mode((400, 708))
@@ -34,6 +35,7 @@ class FlappyBird:
 
     def updateWalls(self):
         self.wallx -= 2
+        self.dist += 1
         if self.wallx < -80:
             self.wallx = 400
             self.counter += 1
@@ -61,10 +63,12 @@ class FlappyBird:
         if downRect.colliderect(self.bird) & self.collisionOn:
             self.dead = True
         if not 0 < self.bird[1] < 720:
+            print self.bird[1]
             self.bird[1] = 50
             self.birdY = 50
             self.dead = False
             self.counter = 0
+            self.dist = 0
             self.wallx = 400
             self.offset = random.randint(-self.offSetDistance, self.offSetDistance)
             self.gravity = 5
@@ -72,7 +76,7 @@ class FlappyBird:
     def run(self):
         clock = pygame.time.Clock()
         pygame.font.init()
-        font = pygame.font.SysFont("Arial", 50)
+        font = pygame.font.SysFont("Arial", 40)
         while True:
             clock.tick(60)
             for event in pygame.event.get():
@@ -89,7 +93,11 @@ class FlappyBird:
                              (self.wallx, 360 + self.gap - self.offset))
             self.screen.blit(self.wallDown,
                              (self.wallx, 0 - self.gap - self.offset))
-            self.screen.blit(font.render(str(self.counter),
+            self.screen.blit(font.render("pipes: " + str(self.counter),
+                                         -1,
+                                         (255, 255, 255)),
+                             (25, 50))
+            self.screen.blit(font.render("dist: " + str(self.dist),
                                          -1,
                                          (255, 255, 255)),
                              (200, 50))
