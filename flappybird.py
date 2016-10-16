@@ -8,12 +8,16 @@ import random
 class FlappyBird:
     def __init__(self):
         # OUR VARIABLES
-        self.collisionOn = True;
-        self.offSetDistance = 150;
-        self.dist = 0;
+        self.collisionOn = True
+        self.offSetDistance = 150
+        self.dist = 0
+        self.screenWidth = 400
+        self.screenHeight = 708
+        self.birdx = 70
+        self.scalingFactor = 250
         
         # EXISTING VARIABLES
-        self.screen = pygame.display.set_mode((400, 708))
+        self.screen = pygame.display.set_mode((self.screenWidth, self.screenHeight))
         self.bird = pygame.Rect(50, 50, 50, 50)
         self.background = pygame.image.load("assets/background.png").convert()
         self.birdSprites = [pygame.image.load("assets/1.png").convert_alpha(),
@@ -35,22 +39,43 @@ class FlappyBird:
     def upperPipeTop(self):
         return 0 - self.gap - self.offset
     
-    def upperPipeBottom(self): # also gapTop
+    def upperPipeBottom(self): # aka gapTop
         return 0 - self.gap - self.offset + self.upperPipe.get_height()
     
-    def lowerPipeTop(self): # also gapBottom
+    def lowerPipeTop(self): # aka gapBottom
         return 360 + self.gap - self.offset
     
-    def pipeLeftSide(self): # also gapLeft
+    def pipeLeftSide(self): # aka gapLeft
         return self.wallx + 2
     
-    def pipeRightSide(self): # also gapRight
+    def pipeRightSide(self): # aka gapRight
         return self.pipeLeftSide() + self.upperPipe.get_width()
+        
+    def distFromGapTop(self):
+        return self.upperPipeBottom() - self.birdY
+    
+    def distFromGapBottom(self):
+        return self.lowerPipeTop() - self.birdY
+    
+    def distFromGapLeft(self):
+        return self.pipeLeftSide() - self.birdx
+    
+    def distFromGapRight(self):
+        return self.pipeRightSide() - self.birdx
+    
+    def distFromScreenBottom(self):
+        return self.screenHeight - self.birdY
+    
+    def inGoodState(self):
+        return self.upperPipeBottom() < self.birdY < self.lowerPipeTop()
+        
+    def reward(self): # ~200 dist traveled for each pipe
+        return self.scalingFactor * self.counter + self.dist
 
     def updateWalls(self):
         self.wallx -= 2
         self.dist += 1
-        if self.wallx < -self.upperPipe.get_width():
+        if self.wallx < (2 * self.upperPipe.get_width()):
             self.wallx = 400
             self.counter += 1
             self.offset = random.randint(-self.offSetDistance, self.offSetDistance)
@@ -76,7 +101,7 @@ class FlappyBird:
             self.dead = True
         if downRect.colliderect(self.bird) & self.collisionOn:
             self.dead = True
-        if not 0 < self.bird[1] < 720:  
+        if not 0 < self.bird[1] < self.screenHeight:  
             self.bird[1] = 50
             self.birdY = 50
             self.dead = False
@@ -118,7 +143,7 @@ class FlappyBird:
                 self.sprite = 2
             elif self.jump:
                 self.sprite = 1
-            self.screen.blit(self.birdSprites[self.sprite], (70, self.birdY))
+            self.screen.blit(self.birdSprites[self.sprite], (self.birdx, self.birdY))
             if not self.dead:
                 self.sprite = 0
             self.updateWalls()
