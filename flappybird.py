@@ -75,7 +75,7 @@ class FlappyBird:
     def updateWalls(self):
         self.wallx -= 2
         self.dist += 1
-        if self.wallx < (2 * self.upperPipe.get_width()):
+        if self.wallx < -self.upperPipe.get_width():
             self.wallx = 400
             self.counter += 1
             self.offset = random.randint(-self.offSetDistance, self.offSetDistance)
