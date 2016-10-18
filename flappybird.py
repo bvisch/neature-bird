@@ -16,9 +16,10 @@ class FlappyBird:
         self.dist = 0
         self.FALL = 0
         self.JUMP = 1
+        self.screenHeight = 720
 
         # EXISTING VARIABLES
-        self.screen = pygame.display.set_mode((400, 708))
+        self.screen = pygame.display.set_mode((400, self.screenHeight))
         self.bird = pygame.Rect(50, 50, 50, 50)
         self.background = pygame.image.load("assets/background.png").convert()
         self.birdSprites = [pygame.image.load("assets/1.png").convert_alpha(),
@@ -83,7 +84,7 @@ class FlappyBird:
                                self.upperPipe.get_height())
         if (lowerPipeRect.colliderect(self.bird) & self.collisionOn
             or downRect.colliderect(self.bird) & self.collisionOn
-            or not 0 < self.bird[1] < 720):
+            or not 0 < self.bird[1] < self.screenHeight):
             self.dead = True
 
     def reset(self):
@@ -138,18 +139,20 @@ class FlappyBird:
             pygame.display.update()
 
         # reward = self.dist + self.counter*10
-        reward = 1 if not dead else -100
+        reward = 1 if not dead else -500
         return [self.getState(), reward, self.dist]
 
     def getState(self):
-        return [self.birdY, self.dead]
+        return [self.birdY/self.screenHeight, self.dead, self.jump/17]
                 # self.upperPipeBottom(),
                 # self.lowerPipeTop(),
                 # self.pipeLeftSide(),
                 # self.pipeRightSide()]
 
 
-nInputs = 2
+game = FlappyBird()
+
+nInputs = len(game.getState())
 nOutputs = 2
 layer1 = 50
 layer2 = 10
@@ -163,8 +166,8 @@ b2 = tf.Variable(tf.zeros([layer2]))
 hidden2 = tf.nn.sigmoid(tf.matmul(hidden, W2) + b2)
 W3 = tf.Variable(tf.random_uniform([layer2,nOutputs], 0, 0.01))
 b3 = tf.Variable(tf.zeros([nOutputs]))
-Qout = tf.matmul(hidden2, W3) + b3
-predict = tf.argmax(Qout,1)
+Qout = tf.reshape(tf.matmul(hidden2, W3) + b3, [nOutputs])
+predict = tf.argmax(Qout, 0)
 maxQVal = tf.reduce_max(Qout)
 
 nextQ = tf.placeholder(shape=[1,nOutputs], dtype=tf.float32)
@@ -174,7 +177,6 @@ updateModel = trainer.minimize(loss)
 
 
 if __name__ == "__main__":
-    game = FlappyBird()
 
     gamma = .99
     epsilon = 0.1
@@ -185,15 +187,18 @@ if __name__ == "__main__":
     sess.run(init)
 
     maxr = 0
+    maxDist = 0
 
     for i in xrange(epochs):
         game.reset()
         state = game.getState()
-        maxDist = 0
 
         while not game.dead:
             action, Q = sess.run([predict, Qout], feed_dict={ inputs: np.array([state], dtype=np.float32) })
-            print Q
+            print action
+            if action == game.JUMP:
+                print 'nn says hi'
+            # print action
             if np.random.rand(1) < epsilon:
                 action = np.random.randint(2)
 
@@ -202,8 +207,8 @@ if __name__ == "__main__":
             # print r
             maxQ = sess.run(maxQVal, feed_dict={ inputs: np.array([newstate], dtype=np.float32) })
             targetQ = Q
-            targetQ[0, action] = reward + gamma*maxQ
-            sess.run(updateModel, feed_dict={ inputs: np.array([state], dtype=np.float32), nextQ: targetQ })
+            targetQ[action] = reward + gamma*maxQ
+            sess.run(updateModel, feed_dict={ inputs: np.array([state], dtype=np.float32), nextQ: targetQ.reshape(1, nOutputs) })
 
             state = newstate
             if dist > maxDist:
