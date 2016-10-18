@@ -11,9 +11,11 @@ import numpy as np
 class FlappyBird:
     def __init__(self):
         # OUR VARIABLES
-        self.collisionOn = False;
-        self.offSetDistance = 150;
-        self.dist = 0;
+        self.collisionOn = False
+        self.offSetDistance = 150
+        self.dist = 0
+        self.FALL = 0
+        self.JUMP = 1
 
         # EXISTING VARIABLES
         self.screen = pygame.display.set_mode((400, 708))
@@ -79,91 +81,103 @@ class FlappyBird:
                                self.upperPipeTop() - 10,
                                self.upperPipe.get_width() - 10,
                                self.upperPipe.get_height())
-        if lowerPipeRect.colliderect(self.bird) & self.collisionOn:
+        if (lowerPipeRect.colliderect(self.bird) & self.collisionOn
+            or downRect.colliderect(self.bird) & self.collisionOn
+            or not 0 < self.bird[1] < 720):
             self.dead = True
-        if downRect.colliderect(self.bird) & self.collisionOn:
-            self.dead = True
-        if not 0 < self.bird[1] < 720:
-            self.bird[1] = 50
-            self.birdY = 50
-            self.dead = False
-            self.counter = 0
-            self.dist = 0
-            self.wallx = 400
-            self.offset = random.randint(-self.offSetDistance, self.offSetDistance)
-            self.gravity = 5
 
-    def step(self, n, action):
+    def reset(self):
+        self.bird[1] = 50
+        self.birdY = 50
+        self.dead = False
+        self.counter = 0
+        self.dist = 0
+        self.wallx = 400
+        self.offset = random.randint(-self.offSetDistance, self.offSetDistance)
+        self.gravity = 5
+
+    def drawEnvironment(self):
+        self.screen.fill((255, 255, 255))
+        self.screen.blit(self.background, (0, 0))
+        self.screen.blit(self.lowerPipe,
+                         (self.wallx, self.lowerPipeTop()))
+        self.screen.blit(self.upperPipe,
+                         (self.wallx, self.upperPipeTop()))
+        self.screen.blit(self.font.render("pipes: " + str(self.counter),
+                                     -1,
+                                     (255, 255, 255)),
+                         (25, 50))
+        self.screen.blit(self.font.render("dist: " + str(self.dist),
+                                     -1,
+                                     (255, 255, 255)),
+                         (200, 50))
+
+    def step(self, n, action, maxDist):
+        dead = False
         for i in range(n):
             self.clock.tick(60)
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    sys.exit()
-                # if (event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN) and not self.dead:
-                #     self.jump = 17
-                #     self.gravity = 5
-                #     self.jumpSpeed = 10
 
-            if action and not self.dead:
-                self.jump = 17
-                self.gravity = 5
-                self.jumpSpeed = 10
-
-            self.screen.fill((255, 255, 255))
-            self.screen.blit(self.background, (0, 0))
-            self.screen.blit(self.lowerPipe,
-                             (self.wallx, self.lowerPipeTop()))
-            self.screen.blit(self.upperPipe,
-                             (self.wallx, self.upperPipeTop()))
-            self.screen.blit(self.font.render("pipes: " + str(self.counter),
-                                         -1,
-                                         (255, 255, 255)),
-                             (25, 50))
-            self.screen.blit(self.font.render("dist: " + str(self.dist),
-                                         -1,
-                                         (255, 255, 255)),
-                             (200, 50))
-            if self.dead:
-                self.sprite = 2
-            elif self.jump:
-                self.sprite = 1
-            self.screen.blit(self.birdSprites[self.sprite], (70, self.birdY))
+            dead |= self.dead
             if not self.dead:
                 self.sprite = 0
+                if action == self.JUMP:
+                    self.jump = 17
+                    self.gravity = 5
+                    self.jumpSpeed = 10
+            else:
+                self.sprite = 2
+
+            if self.jump:
+                self.sprite = 1
+
+            self.drawEnvironment()
+            self.screen.blit(self.birdSprites[self.sprite], (70, self.birdY))
             self.updateWalls()
             self.birdUpdate()
+            dead |= self.dead
             pygame.display.update()
 
-        reward = self.dist + self.counter*10
-        return [self.getState(), reward]
+        # reward = self.dist + self.counter*10
+        reward = 1 if not dead else -100
+        return [self.getState(), reward, self.dist]
 
     def getState(self):
-        return [self.birdY,
-                self.upperPipeBottom(),
-                self.lowerPipeTop(),
-                self.pipeLeftSide(),
-                self.pipeRightSide()]
+        return [self.birdY, self.dead]
+                # self.upperPipeBottom(),
+                # self.lowerPipeTop(),
+                # self.pipeLeftSide(),
+                # self.pipeRightSide()]
 
 
-inputs = tf.placeholder(shape=[1,5], dtype=tf.float32)
-W1 = tf.Variable(tf.random_uniform([5,50], 0, 0.01))
-b1 = tf.Variable(tf.zeros([50]))
+nInputs = 2
+nOutputs = 2
+layer1 = 50
+layer2 = 10
+
+inputs = tf.placeholder(shape=[1,nInputs], dtype=tf.float32)
+W1 = tf.Variable(tf.random_uniform([nInputs,layer1], 0, 0.01))
+b1 = tf.Variable(tf.zeros([layer1]))
 hidden = tf.nn.relu(tf.matmul(inputs, W1) + b1)
-W2 = tf.Variable(tf.random_uniform([50,1], 0, 0.01))
-b2 = tf.Variable(tf.zeros([1]))
-Qout = tf.nn.relu(tf.matmul(hidden, W2) + b2)
+W2 = tf.Variable(tf.random_uniform([layer1,layer2], 0, 0.01))
+b2 = tf.Variable(tf.zeros([layer2]))
+hidden2 = tf.nn.sigmoid(tf.matmul(hidden, W2) + b2)
+W3 = tf.Variable(tf.random_uniform([layer2,nOutputs], 0, 0.01))
+b3 = tf.Variable(tf.zeros([nOutputs]))
+Qout = tf.matmul(hidden2, W3) + b3
+predict = tf.argmax(Qout,1)
+maxQVal = tf.reduce_max(Qout)
 
-
-nextQ = tf.placeholder(shape=[1,1], dtype=tf.float32)
+nextQ = tf.placeholder(shape=[1,nOutputs], dtype=tf.float32)
 loss = tf.reduce_sum(tf.square(nextQ - Qout))
 trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
 updateModel = trainer.minimize(loss)
 
+
 if __name__ == "__main__":
     game = FlappyBird()
 
-    y = .99
-    e = 0.1
+    gamma = .99
+    epsilon = 0.1
     epochs = 1000
 
     init = tf.initialize_all_variables()
@@ -173,19 +187,28 @@ if __name__ == "__main__":
     maxr = 0
 
     for i in xrange(epochs):
-        s = game.getState()
+        game.reset()
+        state = game.getState()
+        maxDist = 0
 
-        while True:
-            a = sess.run(Qout, feed_dict={ inputs: np.array([s], dtype=np.float32) })
-            if np.random.rand(1) < e:
-                a = np.random.randint(2)
+        while not game.dead:
+            action, Q = sess.run([predict, Qout], feed_dict={ inputs: np.array([state], dtype=np.float32) })
+            print Q
+            if np.random.rand(1) < epsilon:
+                action = np.random.randint(2)
 
-            s1, r = game.step(2, a)
-            Q1 = sess.run(Qout, feed_dict={ inputs: np.array([s1], dtype=np.float32) })
-            target = r + y*Q1[0]
-            sess.run(updateModel, feed_dict={ inputs: np.array([s], dtype=np.float32), nextQ: np.array([target], dtype=np.float32) })
+            # print action
+            newstate, reward, dist = game.step(2, action, maxDist)
+            # print r
+            maxQ = sess.run(maxQVal, feed_dict={ inputs: np.array([newstate], dtype=np.float32) })
+            targetQ = Q
+            targetQ[0, action] = reward + gamma*maxQ
+            sess.run(updateModel, feed_dict={ inputs: np.array([state], dtype=np.float32), nextQ: targetQ })
 
-            s = s1
-            if r > maxr:
-                maxr = r
-                print maxr
+            state = newstate
+            if dist > maxDist:
+                maxDist = dist
+                print dist
+            # if reward > maxr:
+            #     maxr = reward
+            #     print maxr
