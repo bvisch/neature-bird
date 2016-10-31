@@ -4,6 +4,7 @@ import pygame
 from pygame.locals import *  # noqa
 import sys
 import random
+from collections import deque
 
 import tensorflow as tf
 import numpy as np
@@ -88,8 +89,8 @@ class FlappyBird:
             self.dead = True
 
     def reset(self):
-        self.bird[1] = 50
-        self.birdY = 50
+        self.bird[1] = 350
+        self.birdY = 350
         self.dead = False
         self.counter = 0
         self.dist = 0
@@ -115,7 +116,7 @@ class FlappyBird:
 
     def step(self, n, action, maxDist):
         dead = False
-        for i in range(n):
+        for i in xrange(n):
             self.clock.tick(60)
 
             dead |= self.dead
@@ -139,11 +140,11 @@ class FlappyBird:
             pygame.display.update()
 
         # reward = self.dist + self.counter*10
-        reward = 1 if not dead else -500
+        reward = 1 if not dead else -100
         return [self.getState(), reward, self.dist]
 
     def getState(self):
-        return [self.birdY/self.screenHeight, self.dead, self.jump/17]
+        return [self.birdY/self.screenHeight, self.dead, self.jump/17, self.dist/50]
                 # self.upperPipeBottom(),
                 # self.lowerPipeTop(),
                 # self.pipeLeftSide(),
@@ -154,33 +155,43 @@ game = FlappyBird()
 
 nInputs = len(game.getState())
 nOutputs = 2
-layer1 = 50
-layer2 = 10
+layer1 = 4
+layer2 = 2
 
 inputs = tf.placeholder(shape=[1,nInputs], dtype=tf.float32)
 W1 = tf.Variable(tf.random_uniform([nInputs,layer1], 0, 0.01))
 b1 = tf.Variable(tf.zeros([layer1]))
-hidden = tf.nn.relu(tf.matmul(inputs, W1) + b1)
-W2 = tf.Variable(tf.random_uniform([layer1,layer2], 0, 0.01))
-b2 = tf.Variable(tf.zeros([layer2]))
-hidden2 = tf.nn.sigmoid(tf.matmul(hidden, W2) + b2)
-W3 = tf.Variable(tf.random_uniform([layer2,nOutputs], 0, 0.01))
-b3 = tf.Variable(tf.zeros([nOutputs]))
-Qout = tf.reshape(tf.matmul(hidden2, W3) + b3, [nOutputs])
+hidden = tf.nn.sigmoid(tf.matmul(inputs, W1) + b1)
+# W2 = tf.Variable(tf.random_uniform([layer1,layer2], 0, 0.01))
+# b2 = tf.Variable(tf.zeros([layer2]))
+# hidden2 = tf.nn.sigmoid(tf.matmul(hidden, W2) + b2)
+# W3 = tf.Variable(tf.random_uniform([layer2,nOutputs], 0, 0.01))
+# b3 = tf.Variable(tf.zeros([nOutputs]))
+# Qout = tf.reshape(tf.nn.softmax(tf.matmul(hidden2, W3)), [nOutputs])
+W2 = tf.Variable(tf.random_uniform([layer1,nOutputs], 0, 0.01))
+b2 = tf.Variable(tf.zeros([nOutputs]))
+Qout = tf.reshape(tf.nn.softmax(tf.matmul(hidden, W2)), [nOutputs])
 predict = tf.argmax(Qout, 0)
 maxQVal = tf.reduce_max(Qout)
 
-nextQ = tf.placeholder(shape=[1,nOutputs], dtype=tf.float32)
-loss = tf.reduce_sum(tf.square(nextQ - Qout))
+# nextQ = tf.placeholder(shape=[1,nOutputs], dtype=tf.float32)
+# loss = tf.reduce_sum(tf.square(nextQ - maxQVal))
+# trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
+# updateModel = trainer.minimize(loss)
+
+actionTaken = tf.placeholder(shape=(1), dtype = tf.int32)
+y = tf.placeholder(shape=(1), dtype=tf.float32)
+actionValue = tf.slice(Qout, actionTaken, [1])
+loss = tf.reduce_sum(tf.square(y - actionValue))
 trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
 updateModel = trainer.minimize(loss)
 
 
 if __name__ == "__main__":
 
-    gamma = .99
-    epsilon = 0.1
-    epochs = 1000
+    GAMMA = .99
+    EPSILON = 0.1
+    EPOCHS = 1000
 
     init = tf.initialize_all_variables()
     sess = tf.Session()
@@ -188,32 +199,50 @@ if __name__ == "__main__":
 
     maxr = 0
     maxDist = 0
+    REPLAY_SIZE = 80
+    BATCH_SIZE = 40
+    replayMemory = deque(maxlen=REPLAY_SIZE)
 
-    for i in xrange(epochs):
+    for i in xrange(EPOCHS):
         game.reset()
         state = game.getState()
 
         while not game.dead:
             action, Q = sess.run([predict, Qout], feed_dict={ inputs: np.array([state], dtype=np.float32) })
-            print action
-            if action == game.JUMP:
-                print 'nn says hi'
-            # print action
-            if np.random.rand(1) < epsilon:
+            print str(action) + " " + str(Q)
+            if np.random.rand(1) < EPSILON:
                 action = np.random.randint(2)
 
-            # print action
-            newstate, reward, dist = game.step(2, action, maxDist)
-            # print r
-            maxQ = sess.run(maxQVal, feed_dict={ inputs: np.array([newstate], dtype=np.float32) })
-            targetQ = Q
-            targetQ[action] = reward + gamma*maxQ
-            sess.run(updateModel, feed_dict={ inputs: np.array([state], dtype=np.float32), nextQ: targetQ.reshape(1, nOutputs) })
+            newState, reward, dist = game.step(2, action, maxDist)
 
-            state = newstate
-            if dist > maxDist:
-                maxDist = dist
-                print dist
+            replayMemory.append((state, action, reward, newState))
+            if len(replayMemory) >= REPLAY_SIZE:
+                minibatch = np.array(random.sample(replayMemory, BATCH_SIZE))
+                states = minibatch[:,0]
+                actions = minibatch[:,1]
+                rewards = minibatch[:,2]
+                newStates = minibatch[:,3]
+
+                maxQBatch = sess.run(maxQVal, feed_dict={ inputs: newStates })
+                yBatch = []
+                for i in xrange(BATCH_SIZE):
+                    if rewards[i] < 0:
+                        yBatch.append(rewards[i])
+                    else:
+                        yBatch.append(rewards[i] + GAMMA * maxQBatch[i])
+
+                sess.run(updateModel, feed_dict={ inputs: states, y: yBatch })
+
+
+            # maxQ = sess.run(maxQVal, feed_dict={ inputs: np.array([newState], dtype=np.float32) })
+            # targetQ = Q
+            # targetQ[action] = reward + GAMMA*maxQ
+            # sess.run(updateModel, feed_dict={ inputs: np.array([state], dtype=np.float32), nextQ: targetQ.reshape(1, nOutputs) })
+            # print sess.run(W2, feed_dict={ inputs: np.array([state], dtype=np.float32) })
+            state = newState
+            # if dist > maxDist:
+            #     maxDist = dist
+            #     print dist
             # if reward > maxr:
             #     maxr = reward
             #     print maxr
