@@ -157,8 +157,10 @@ nInputs = len(game.getState())
 nOutputs = 2
 layer1 = 4
 layer2 = 2
+REPLAY_SIZE = 1600
+BATCH_SIZE = 800
 
-inputs = tf.placeholder(shape=[1,nInputs], dtype=tf.float32)
+inputs = tf.placeholder(shape=[None,nInputs], dtype=tf.float32)
 W1 = tf.Variable(tf.random_uniform([nInputs,layer1], 0, 0.01))
 b1 = tf.Variable(tf.zeros([layer1]))
 hidden = tf.nn.sigmoid(tf.matmul(inputs, W1) + b1)
@@ -170,21 +172,21 @@ hidden = tf.nn.sigmoid(tf.matmul(inputs, W1) + b1)
 # Qout = tf.reshape(tf.nn.softmax(tf.matmul(hidden2, W3)), [nOutputs])
 W2 = tf.Variable(tf.random_uniform([layer1,nOutputs], 0, 0.01))
 b2 = tf.Variable(tf.zeros([nOutputs]))
-Qout = tf.reshape(tf.nn.softmax(tf.matmul(hidden, W2)), [nOutputs])
-predict = tf.argmax(Qout, 0)
-maxQVal = tf.reduce_max(Qout)
+Qout = tf.nn.softmax(tf.matmul(hidden, W2))
+predict = tf.reshape(tf.argmax(Qout, 1), [])
+maxQVal = tf.reduce_max(Qout, reduction_indices=1)
 
 # nextQ = tf.placeholder(shape=[1,nOutputs], dtype=tf.float32)
 # loss = tf.reduce_sum(tf.square(nextQ - maxQVal))
 # trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
 # updateModel = trainer.minimize(loss)
 
-actionTaken = tf.placeholder(shape=(1), dtype = tf.int32)
-y = tf.placeholder(shape=(1), dtype=tf.float32)
-actionValue = tf.slice(Qout, actionTaken, [1])
-loss = tf.reduce_sum(tf.square(y - actionValue))
-trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
-updateModel = trainer.minimize(loss)
+actionTaken = tf.placeholder(shape=(None,nOutputs), dtype = tf.float32)
+y = tf.placeholder(shape=(None,1), dtype=tf.float32)
+actionValue = tf.reduce_sum(tf.mul(Qout, actionTaken), reduction_indices=1)
+cost = tf.reduce_mean(tf.square(y - actionValue))
+trainer = tf.train.AdamOptimizer(learning_rate=0.01)
+updateModel = trainer.minimize(cost)
 
 
 if __name__ == "__main__":
@@ -199,8 +201,6 @@ if __name__ == "__main__":
 
     maxr = 0
     maxDist = 0
-    REPLAY_SIZE = 80
-    BATCH_SIZE = 40
     replayMemory = deque(maxlen=REPLAY_SIZE)
 
     for i in xrange(EPOCHS):
@@ -215,23 +215,25 @@ if __name__ == "__main__":
 
             newState, reward, dist = game.step(2, action, maxDist)
 
-            replayMemory.append((state, action, reward, newState))
+            actionTensor = [0,0]
+            actionTensor[action] = 1
+            replayMemory.append((state, actionTensor, reward, newState))
             if len(replayMemory) >= REPLAY_SIZE:
                 minibatch = np.array(random.sample(replayMemory, BATCH_SIZE))
-                states = minibatch[:,0]
-                actions = minibatch[:,1]
+                states = np.vstack(minibatch[:,0])
+                actions = np.vstack(minibatch[:,1])
                 rewards = minibatch[:,2]
-                newStates = minibatch[:,3]
+                newStates = np.vstack(minibatch[:,3])
 
                 maxQBatch = sess.run(maxQVal, feed_dict={ inputs: newStates })
                 yBatch = []
                 for i in xrange(BATCH_SIZE):
                     if rewards[i] < 0:
-                        yBatch.append(rewards[i])
+                        yBatch.append([rewards[i]])
                     else:
-                        yBatch.append(rewards[i] + GAMMA * maxQBatch[i])
+                        yBatch.append([rewards[i] + GAMMA * maxQBatch[i]])
 
-                sess.run(updateModel, feed_dict={ inputs: states, y: yBatch })
+                sess.run(updateModel, feed_dict={ inputs: states, actionTaken: actions, y: yBatch })
 
 
             # maxQ = sess.run(maxQVal, feed_dict={ inputs: np.array([newState], dtype=np.float32) })
